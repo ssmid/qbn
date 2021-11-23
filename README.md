@@ -33,6 +33,20 @@ Optional:
 - endianess? (embedded things use big endian?)
 - risc-v, arm, x86
 
+## Building
+
+Requirements: cmake, gcc
+
+```
+git clone https://github.com/ssmid/qbn
+cd qbn
+cmake .
+make
+./test_qbn
+```
+
+## Notes
+
 DONE:
 - basic x64/sysv abi compatibility
 - compiles hello world
