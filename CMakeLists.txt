@@ -12,7 +12,10 @@ add_library(
         src/op.macro
         src/util/process.h
         src/util/vector.h
-        src/print.h src/limits.h src/util/std.h)
+        src/print.h
+        src/limits.h
+        src/util/std.h
+)
 
 add_executable(
         test_qbn
@@ -20,8 +23,10 @@ add_executable(
         src/qbn.h
         src/qbn.c
         src/processing.h
-        src/op.macro
         src/op.h
         src/util/process.h
         src/util/vector.h
-        src/print.h src/limits.h src/util/std.h)
+        src/print.h
+        src/limits.h
+        src/util/std.h
+)
