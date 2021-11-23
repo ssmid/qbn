@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.16)
 project(qbn C)
 
 set(CMAKE_C_STANDARD 11)
@@ -9,7 +9,6 @@ add_library(
         src/qbn.c
         src/processing.h
         src/op.h
-        src/op.macro
         src/util/process.h
         src/util/vector.h
         src/print.h
