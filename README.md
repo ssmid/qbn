@@ -64,9 +64,10 @@ TODO:
 - process function parameters
 - more complex test program (multiple blocks, multiple functions)
 - emit jumps
-- stack arguments
 - support more instructions
+- stack allocation (temporaries, manual)
 - why no convention for xmm register save?
+- stack arguments
 - ssa
 - structs
 - optimizations!
