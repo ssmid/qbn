@@ -6,6 +6,8 @@ to QBE's one.
 
 _This project is still in a very early state. Code structure will change._
 
+For information on the current state, have a look at the DONE/TODO list.
+
 ## Motivation
 I created this project because I wasn't happy with existing compiler backends:
 - GCC is not easily embeddable
