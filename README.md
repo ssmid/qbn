@@ -55,14 +55,16 @@ DONE:
 - save callee registers
 - save caller registers
 - stack alignment
+- temporaries
+- basic register allocation
 
 TODO:
-- temporaries, basic register allocation
 - process function parameters
 - more complex test program (multiple blocks, multiple functions)
 - emit jumps
 - stack arguments
 - support more instructions
+- why no convention for xmm register save?
 - ssa
 - structs
 - optimizations!

@@ -6,8 +6,7 @@
 #include <assert.h>
 #include <stdarg.h>
 #include "qbn.h"
-
-
+#include "util/std.h"
 
 typedef enum {
     QBN_RAX = 1, /* caller-saved */
@@ -66,7 +65,7 @@ const int QBN_REG_INT_COUNT = 14;
 const int QBN_REG_CALLER_SAVED_START = 0;
 const int QBN_REG_CALLER_SAVED_END = 9;
 const int QBN_REG_CALLEE_SAVED_START = 9;
-const int QBN_REG_CALLEE_SAVED_END = 13;
+const int QBN_REG_CALLEE_SAVED_END = 14;
 const int QBN_REG_ARG_INT_START = 1;
 const int QBN_REG_ARG_INT_END = 7;
 
@@ -98,6 +97,32 @@ void qbn_add_pop(QbnFn* fn, QbnRef reg, QbnType type) {
     qbn_add_stack(fn, -QBN_TYPE_INFO[type].bytes);
 }
 
+void qbn_amd64_sysv_save_caller_regs_move(QbnFn* fn) {
+    int end = MIN(QBN_REG_CALLER_SAVED_END, fn->rega_n_int_regs_used);
+    for (int i=QBN_REG_CALLER_SAVED_START; i<end; i++) {
+        qbn_add_push(fn, QBN_REG_REF(QBN_REG_INT[i]), fn->context->size_type);
+    }
+}
+
+void qbn_amd64_sysv_restore_caller_regs_move(QbnFn* fn) {
+    int end = MIN(QBN_REG_CALLER_SAVED_END, fn->rega_n_int_regs_used);
+    for (int i=end-1; i>=QBN_REG_CALLER_SAVED_START; i--) {
+        qbn_add_pop(fn, QBN_REG_REF(QBN_REG_INT[i]), fn->context->size_type);
+    }
+}
+
+void qbn_amd64_sysv_save_callee_regs_move(QbnFn* fn) {
+    for (int i=QBN_REG_CALLEE_SAVED_START; i<fn->rega_n_int_regs_used; i++) {
+        qbn_add_push(fn, QBN_REG_REF(QBN_REG_INT[i]), fn->context->size_type);
+    }
+}
+
+void qbn_amd64_sysv_restore_callee_regs_move(QbnFn* fn) {
+    for (int i=fn->rega_n_int_regs_used-1; i>=QBN_REG_CALLEE_SAVED_START; i--) {
+        qbn_add_pop(fn, QBN_REG_REF(QBN_REG_INT[i]), fn->context->size_type);
+    }
+}
+
 void qbn_amd64_sysv_copy(QbnContext* context, QbnBlock* block, QbnInstr* copy) {
     QbnConst* con;
     switch (QBN_REF_TYPE(copy->arg0)) {
@@ -112,10 +137,7 @@ void qbn_amd64_sysv_copy(QbnContext* context, QbnBlock* block, QbnInstr* copy) {
 }
 
 void qbn_amd64_sysv_call_move(QbnFn* fn, QbnBlock* block, QbnInstr* instr) {
-    // save caller registers
-    for (int i=QBN_REG_CALLER_SAVED_START; i<QBN_REG_CALLER_SAVED_END; i++) {
-        qbn_add_push(fn, QBN_REG_REF(QBN_REG_INT[i]), fn->context->size_type);
-    }
+    qbn_amd64_sysv_save_caller_regs_move(fn);
 
     int n_int_args = 0;
     int n_float_args = 0;
@@ -152,18 +174,12 @@ void qbn_amd64_sysv_call_move(QbnFn* fn, QbnBlock* block, QbnInstr* instr) {
         qbn_context_copy_instr(fn->context, *instr);
     }
 
-    // restore caller registers
-    for (int i=QBN_REG_CALLER_SAVED_END-1; i>=QBN_REG_CALLER_SAVED_START; i--) {
-        qbn_add_pop(fn, QBN_REG_REF(QBN_REG_INT[i]), fn->context->size_type);
-    }
+    qbn_amd64_sysv_restore_caller_regs_move(fn);
 }
 
 void qbn_amd64_sysv_return_move(QbnFn* fn, QbnBlock* block) {
     QbnInstr* instr;
-    // restore callee registers
-    for (int i=QBN_REG_CALLEE_SAVED_END-1; i>=QBN_REG_CALLEE_SAVED_END; i--) {
-        qbn_add_pop(fn, QBN_REG_REF(QBN_REG_INT[i]), fn->context->size_type);
-    }
+    qbn_amd64_sysv_restore_callee_regs_move(fn);
     switch (block->jmp_type) {
         case QBN_JUMP_RET_BASE:
             instr = fn->context->current_instr;
@@ -206,6 +222,7 @@ void qbn_amd64_sysv_block(QbnFn* fn, QbnBlock* block) {
                 instr_new = fn->context->current_instr;
                 qbn_context_copy_instr(fn->context, *instr_old);
                 qbn_amd64_sysv_copy(fn->context, block, instr_new);
+                break;
             default:
                 qbn_context_copy_instr(fn->context, *instr_old);
         }
@@ -224,10 +241,7 @@ void qbn_amd64_sysv_abi(QbnFn* fn) {
     fn->stack_alignment = 0;
 
     QbnInstr* instr_new = fn->context->current_instr;
-    // save callee registers
-    for (int i=QBN_REG_CALLEE_SAVED_START; i<QBN_REG_CALLEE_SAVED_END; i++) {
-        qbn_add_push(fn, QBN_REG_REF(QBN_REG_INT[i]), fn->context->size_type);
-    }
+    qbn_amd64_sysv_save_callee_regs_move(fn);
     // TODO: select parameters
 
     int i = 0;
@@ -243,20 +257,49 @@ void qbn_amd64_sysv_abi(QbnFn* fn) {
     }
 }
 
-void qbn_amd64_basic_reg_allocation(QbnContext* context, QbnFn* fn) {
+QbnRef qbn_amd64_temp_to_ref(QbnFn* fn, QbnRef temp_ref) {
+    assert(QBN_REF_TYPE(temp_ref) == QBN_REF_TEMP);
+    QbnTemp* temp = &fn->temps[QBN_REF_INDEX(temp_ref)];
+    assert(temp->slot != QBN_REF0);
+    return temp->slot;
+}
 
+void qbn_amd64_basic_reg_allocation(QbnFn* fn) {
+    fn->rega_n_int_regs_used = 0;
+    fn->rega_n_float_regs_used = 0;
     for (int i=0; i<fn->vec_blocks->length; i++) {
         for (QbnInstr* instr = fn->blocks[i]->instr; instr->op != QBN_OP_BLOCK_END; instr++) {
-            if (instr->op != QBN_OP0 && instr->to != QBN_REF0) {
-                assert(QBN_REF_TYPE(instr->to) == QBN_REF_TEMP);
-                QbnTemp* temp = &fn->temps[QBN_REF_INDEX(instr->to)];
-                if (temp->slot != QBN_REF0) {
-                    // allocate a register
-                    //if () {
-                    //}
+            if (instr->op != QBN_OP0) {
+                if (instr->to != QBN_REF0) {
+                    assert(QBN_REF_TYPE(instr->to) == QBN_REF_TEMP);
+                    QbnTemp *temp = &fn->temps[QBN_REF_INDEX(instr->to)];
+                    if (temp->slot == QBN_REF0) {
+                        // allocate a register
+                        // TODO: stack temporaries
+                        if (temp->type == QBN_ETYPE_F32 || temp->type == QBN_ETYPE_F64) {
+                            // float
+                            assert(fn->rega_n_float_regs_used < QBN_REG_FLOAT_COUNT);
+                            temp->slot = QBN_REG_REF(QBN_REG_FLOAT[fn->rega_n_float_regs_used]);
+                            fn->rega_n_float_regs_used++;
+                        } else {
+                            // int
+                            assert(fn->rega_n_int_regs_used < QBN_REG_INT_COUNT);
+                            temp->slot = QBN_REG_REF(QBN_REG_INT[fn->rega_n_int_regs_used]);
+                            fn->rega_n_int_regs_used++;
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+void qbn_process(QbnContext* context) {
+    for (int i=0; i<context->vec_functions->length; i++) {
+        QbnFn* fn = context->functions[i];
+        qbn_amd64_basic_reg_allocation(fn);
+        qbn_print_all(stderr, fn->context, "after reg allocation");
+        qbn_amd64_sysv_abi(fn);
     }
 }
 
@@ -492,8 +535,9 @@ void qbn_emit_return(FILE* file, QbnBlock* block) {
     qbn_fprintf_indent(file, "ret\n");
 }
 
-void qbn_emit_block(QbnContext* context, QbnBlock* block, FILE* file) {
+void qbn_emit_block(QbnFn* fn, QbnBlock* block, FILE* file) {
     QbnInstr* instr = block->instr;
+    QbnTemp* temp;
     while (instr->op != QBN_OP_BLOCK_END) {
         switch (instr->op) {
             case QBN_OP0:
@@ -506,24 +550,36 @@ void qbn_emit_block(QbnContext* context, QbnBlock* block, FILE* file) {
                         qbn_emit_amd64_reg(instr->arg0, QBN_TYPE_INFO[instr->type].bytes, file);
                         break;
                     case QBN_REF_CONST:
-                        qbn_emit_amd64_const(context, instr->arg0, file);
+                        qbn_emit_amd64_const(fn->context, instr->arg0, file);
+                        break;
+                    case QBN_REF_TEMP:
+                        temp = &fn->temps[QBN_REF_INDEX(instr->arg0)];
+                        assert(temp->slot != QBN_REF0);
+                        assert(QBN_REF_TYPE(temp->slot) == QBN_REF_REG);
+                        qbn_emit_amd64_reg(temp->slot, QBN_TYPE_INFO[instr->type].bytes, file);
                         break;
                     default:
                         QBN_UNREACHABLE
                 }
                 fprintf(file, ", ");
+                if (QBN_REF_TYPE(instr->to) == QBN_REF_TEMP) {
+                    temp = &fn->temps[QBN_REF_INDEX(instr->to)];
+                    assert(temp->slot != QBN_REF0);
+                    instr->to = temp->slot;
+                }
+                assert(QBN_REF_TYPE(instr->to));
                 qbn_emit_amd64_reg(instr->to, QBN_TYPE_INFO[instr->type].bytes, file);
                 fprintf(file, "\n");
                 break;
             case QBN_OP_CALL:
                 qbn_fprintf_indent(file, "call ");
-                qbn_emit_amd64_const(context, instr->arg0, file);
+                qbn_emit_amd64_const(fn->context, instr->arg0, file);
                 fprintf(file, "\n");
                 break;
             // TODO: support all (external) instructions
             // TODO refactor rest into table
             default:
-                qbn_emit_instr(context, instr, file);
+                qbn_emit_instr(fn->context, instr, file);
         }
         instr++;
     }
@@ -548,7 +604,7 @@ void qbn_emit_fn(QbnFn* fn, FILE* file) {
     // push registers? callee saved registers probably
 
     for (int i=0; i<fn->vec_blocks->length; i++) {
-        qbn_emit_block(fn->context, fn->blocks[i], file);
+        qbn_emit_block(fn, fn->blocks[i], file);
         if (QBN_IS_RETURN(fn->blocks[i]->jmp_type)) {
             qbn_emit_return(file, fn->blocks[i]);
         } else {

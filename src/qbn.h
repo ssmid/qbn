@@ -87,7 +87,7 @@ struct QbnDataItem {
         } start;
 
         struct {
-            // TODO: maybe refactor to Reference? ref_type checking needed then
+            // TODO: maybe refactor to QbnRef? ref_type checking needed then
             const char* name;
             long offset;
             QbnType ext_type;
@@ -130,8 +130,8 @@ struct QbnFn {
     QbnTemp* temps;
     UtilVector* vec_blocks;
     QbnBlock** blocks;
-    int n_float_regs_used;
-    int n_int_regs_used;
+    int rega_n_float_regs_used;
+    int rega_n_int_regs_used;
     unsigned long frame_size;
     unsigned char stack_alignment;
     bool export;
@@ -212,6 +212,10 @@ const char* qbn_type2s[] = {
 
 void run_example();
 
+void qbn_print_fns(QbnContext* context, FILE* file);
+void qbn_print_instr_cache(QbnContext* context, FILE* file);
+void qbn_print_all(FILE* file, QbnContext* context, char* hint);
+
 QbnInstr* qbn_block_last_instr(QbnBlock* block) {
     // returns the block's last instruction which should be empty
     QbnInstr* instr = block->instr;
@@ -231,18 +235,18 @@ unsigned int qbn_context_add_const(QbnContext* context, QbnConst con) {
     return (unsigned int) i;
 }
 
-QbnRef qbn_context_new_label(QbnContext* context, char* label, int const_type) {
+QbnRef qbn_context_new_label(QbnContext* context, const char* label, int const_type) {
     // constant containing a string label that
     // may or may not refer to another object (data, function, ...)
     unsigned int index = qbn_context_add_const(context, (QbnConst) {.type = const_type, .value.label = label});
     return QBN_REF_TYPE_SET(QBN_REF_INDEX_SET(QBN_REF0, index), QBN_REF_CONST);
 }
 
-QbnRef qbn_context_new_data_ref(QbnContext* context, char* label) {
+QbnRef qbn_context_new_data_ref(QbnContext* context, const char* label) {
     return qbn_context_new_label(context, label, QBN_CONST_ADDR);
 }
 
-QbnRef qbn_context_new_name_ref(QbnContext* context, char* label) {
+QbnRef qbn_context_new_name_ref(QbnContext* context, const char* label) {
     return qbn_context_new_label(context, label, QBN_CONST_NAME);
 }
 
@@ -284,11 +288,12 @@ void qbn_data_end(QbnContext* context) {
     context->data_count++;
 }
 
-void qbn_data_new_cstring(QbnContext* context, const char* name, const char* string, char export) {
+QbnRef qbn_data_new_cstring(QbnContext* context, const char* name, const char* string, char export) {
     qbn_data_new(context, name, export);
     qbn_data_add_item(context, (QbnDataItem){.type = QBN_DATA_STRING, .value.string = string});
     qbn_data_add_item(context, (QbnDataItem){.type = QBN_DATA_CONSTANT, .value.number = {.ext_type = QBN_TYPE_I8, .value.i = 0}});
     qbn_data_end(context);
+    return qbn_context_new_data_ref(context, name);
 }
 
 void qbn_context_add_instr(QbnContext* context, QbnOp op, QbnRef arg0, QbnRef arg1, QbnRef to, QbnBaseType type) {
@@ -320,14 +325,14 @@ void qbn_fn_add_instr(QbnFn* fn, QbnOp op, QbnRef arg0, QbnRef arg1, QbnRef to, 
     qbn_context_add_instr(fn->context, op, arg0, arg1, to, type);
 }
 
-QbnTemp* qbn_fn_new_temp(QbnFn* fn, QbnExtType type) {
+QbnRef qbn_fn_new_temp(QbnFn* fn, QbnExtType type) {
     util_vector_grow(fn->vec_temps, 1);
-    QbnTemp* temp = &fn->temps[fn->vec_temps->length - 1];
-    *temp = (QbnTemp){
+    size_t index = fn->vec_temps->length - 1;
+    fn->temps[index] = (QbnTemp){
             .type = type,
-            .slot = 0
+            .slot = QBN_REF0
     };
-    return temp;
+    return QBN_TEMP_REF(index);
 }
 
 QbnBlock* qbn_fn_next_block(QbnFn* fn) {
@@ -368,8 +373,8 @@ QbnFn* qbn_context_new_fn(QbnContext* context, QbnBaseType return_type, char* na
     util_vector_grow(context->vec_functions, 1);
     context->functions[context->vec_functions->length-1] = fn;
     fn->start = NULL;
-    fn->n_int_regs_used = 0;
-    fn->n_float_regs_used = 0;
+    fn->rega_n_int_regs_used = 0;
+    fn->rega_n_float_regs_used = 0;
     return fn;
 }
 

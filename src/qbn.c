@@ -5,7 +5,6 @@
 #include "print.h"
 
 
-
 static void write_to_file(QbnContext* context, const char* file_name) {
     FILE* file = fopen(file_name, "w");
     if (!file) {
@@ -19,17 +18,31 @@ static void write_to_file(QbnContext* context, const char* file_name) {
 
 static QbnContext* set_up_hello() {
     QbnContext* context = qbn_context_new();
-    qbn_data_new_cstring(context, "s", "Hello, world!\\n", false);
+    QbnRef s = qbn_data_new_cstring(context, "s", "Hello, world!\\n", false);
 
     QbnFn* fn = qbn_context_new_fn(context, QBN_BTYPE_I32, "main", true);
     QbnBlock* start = qbn_fn_next_block(fn);
-    qbn_fn_add_instr(fn, QBN_OP_ARG, qbn_context_new_data_ref(context, "s"), QBN_REF0, QBN_REF0, context->size_type);
+    qbn_fn_add_instr(fn, QBN_OP_ARG, s, QBN_REF0, QBN_REF0, context->size_type);
     qbn_fn_add_instr(fn, QBN_OP_CALL, qbn_context_new_name_ref(context, "printf"), QBN_REF0, QBN_REF0, 0);
     qbn_fn_block_return(fn, start, QBN_BTYPE_I32, qbn_context_new_const_number(context, 0));
     return context;
 }
 
 static QbnContext* set_up_test() {
+    QbnContext* context = qbn_context_new();
+    QbnRef s = qbn_data_new_cstring(context, "s", "Hello, world!\\n", false);
+
+    QbnFn* fn = qbn_context_new_fn(context, QBN_BTYPE_I32, "main", true);
+    QbnBlock* start = qbn_fn_next_block(fn);
+    QbnRef temp = qbn_fn_new_temp(fn, QBN_ETYPE_I32);
+    qbn_fn_add_instr(fn, QBN_OP_COPY, qbn_context_new_const_number(context, 0), QBN_REF0, temp, QBN_ETYPE_I32);
+    qbn_fn_add_instr(fn, QBN_OP_ARG, s, QBN_REF0, QBN_REF0, context->size_type);
+    qbn_fn_add_instr(fn, QBN_OP_CALL, qbn_context_new_name_ref(context, "printf"), QBN_REF0, QBN_REF0, 0);
+    qbn_fn_block_return(fn, start, QBN_BTYPE_I32, temp);
+    return context;
+}
+
+static QbnContext* set_up_test2() {
     QbnContext* context = qbn_context_new();
     //QbnFn* fn_square = qbn_context_new_fn(context, QBN_BTYPE_I32, "square", false);
     //QbnBlock* block_square = qbn_fn_next_block(fn_square);
@@ -42,20 +55,11 @@ static QbnContext* set_up_test() {
 }
 
 void run_example() {
-    QbnContext* context = set_up_hello();
+    QbnContext* context = set_up_test();
 
-    // process and emit code
-    fprintf(stderr, "instruction cache start:\n");
-    qbn_print_instr_cache(context, stderr);
-
-    for (int i=0; i<context->vec_functions->length; i++) {
-        qbn_amd64_sysv_abi(context->functions[i]);
-    }
-
-    fprintf(stderr, "instruction cache after abi:\n");
-    qbn_print_instr_cache(context, stderr);
-    qbn_print_fns(context, stderr);
-
+    qbn_print_all(stderr, context, "instruction cache start");
+    qbn_process(context);
+    qbn_print_all(stderr, context, "instruction cache after processing");
     qbn_emit(context, stdout);
     fprintf(stdout, "\n");
 
