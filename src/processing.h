@@ -58,7 +58,7 @@ const int QBN_NFPS = QBN_NFPR;
 const int QBN_NCLR = QBN_R15 - QBN_RBX + 1;
 
 const QbnAmd64Register QBN_REG_INT[] = {
-        QBN_RAX, QBN_RDI, QBN_RSI, QBN_RDX, QBN_RCX, QBN_R8, QBN_R9, QBN_R10, QBN_R11,
+        QBN_RDI, QBN_RSI, QBN_RDX, QBN_RCX, QBN_R8, QBN_R9, QBN_RAX, QBN_R10, QBN_R11,
         QBN_RBX, QBN_R12, QBN_R13, QBN_R14, QBN_R15
 };
 const int QBN_REG_INT_COUNT = 14;
@@ -66,8 +66,8 @@ const int QBN_REG_CALLER_SAVED_START = 0;
 const int QBN_REG_CALLER_SAVED_END = 9;
 const int QBN_REG_CALLEE_SAVED_START = 9;
 const int QBN_REG_CALLEE_SAVED_END = 14;
-const int QBN_REG_ARG_INT_START = 1;
-const int QBN_REG_ARG_INT_END = 7;
+const int QBN_REG_ARG_INT_START = 0;
+const int QBN_REG_ARG_INT_END = 6;
 
 const QbnAmd64Register QBN_REG_FLOAT[] = {
         QBN_XMM0, QBN_XMM1, QBN_XMM2,  QBN_XMM3,  QBN_XMM4,  QBN_XMM5,  QBN_XMM6,  QBN_XMM7,
@@ -211,6 +211,8 @@ void qbn_amd64_sysv_block(QbnFn* fn, QbnBlock* block) {
     while (instr_old->op != QBN_OP_BLOCK_END) {
         QbnInstr* instr_new;
         switch (instr_old->op) {
+            case QBN_OP_PAR:
+                break;
             case QBN_OP_ARG:
             case QBN_OP_CALL:
                 qbn_amd64_sysv_call_move(fn, block, instr_old);
@@ -268,6 +270,8 @@ void qbn_amd64_basic_reg_allocation(QbnFn* fn) {
     fn->rega_n_int_regs_used = 0;
     fn->rega_n_float_regs_used = 0;
     for (int i=0; i<fn->vec_blocks->length; i++) {
+        // allocates registers in order of calling convention
+        // function parameters rely on this fact
         for (QbnInstr* instr = fn->blocks[i]->instr; instr->op != QBN_OP_BLOCK_END; instr++) {
             if (instr->op != QBN_OP0) {
                 if (instr->to != QBN_REF0) {

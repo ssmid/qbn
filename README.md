@@ -59,10 +59,9 @@ DONE:
 - stack alignment
 - temporaries
 - basic register allocation
+- process function parameters
 
 TODO:
-- process function parameters
-- more complex test program (multiple blocks, multiple functions)
 - emit jumps
 - support more instructions
 - stack allocation (temporaries, manual)

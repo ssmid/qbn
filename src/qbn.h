@@ -317,10 +317,6 @@ void qbn_context_block_end(QbnContext* context) {
     context->current_instr++;
 }
 
-void qbn_fn_add_parameter(QbnFn* fn, QbnBaseType type) {
-    // TODO
-}
-
 void qbn_fn_add_instr(QbnFn* fn, QbnOp op, QbnRef arg0, QbnRef arg1, QbnRef to, QbnBaseType type) {
     qbn_context_add_instr(fn->context, op, arg0, arg1, to, type);
 }
@@ -333,6 +329,12 @@ QbnRef qbn_fn_new_temp(QbnFn* fn, QbnExtType type) {
             .slot = QBN_REF0
     };
     return QBN_TEMP_REF(index);
+}
+
+QbnRef qbn_fn_add_parameter(QbnFn* fn, QbnBaseType type) {
+    QbnRef temp = qbn_fn_new_temp(fn, type);
+    qbn_fn_add_instr(fn, QBN_OP_PAR, QBN_REF0, QBN_REF0, temp, type);
+    return temp;
 }
 
 QbnBlock* qbn_fn_next_block(QbnFn* fn) {

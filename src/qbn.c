@@ -34,8 +34,11 @@ static QbnContext* set_up_test() {
 
     QbnFn* fn = qbn_context_new_fn(context, QBN_BTYPE_I32, "main", true);
     QbnBlock* start = qbn_fn_next_block(fn);
-    QbnRef temp = qbn_fn_new_temp(fn, QBN_ETYPE_I32);
-    qbn_fn_add_instr(fn, QBN_OP_COPY, qbn_context_new_const_number(context, 0), QBN_REF0, temp, QBN_ETYPE_I32);
+    QbnRef argc = qbn_fn_add_parameter(fn, QBN_BTYPE_I32);
+    QbnRef argv = qbn_fn_add_parameter(fn, context->size_type);
+    QbnRef temp = qbn_fn_new_temp(fn, QBN_BTYPE_I32);
+    //qbn_fn_add_instr(fn, QBN_OP_COPY, qbn_context_new_const_number(context, 0), QBN_REF0, temp, QBN_BTYPE_I32);
+    qbn_fn_add_instr(fn, QBN_OP_COPY, argc, QBN_REF0, temp, QBN_BTYPE_I32);
     qbn_fn_add_instr(fn, QBN_OP_ARG, s, QBN_REF0, QBN_REF0, context->size_type);
     qbn_fn_add_instr(fn, QBN_OP_CALL, qbn_context_new_name_ref(context, "printf"), QBN_REF0, QBN_REF0, 0);
     qbn_fn_block_return(fn, start, QBN_BTYPE_I32, temp);
@@ -70,9 +73,9 @@ void run_example() {
     char* exe_path = "../out";
     char p_out[1024];
     char p_err[1024];
-    char gcc_cmd[256];
-    snprintf(gcc_cmd, 256, "gcc -pipe -x assembler -o %s %s", exe_path, asm_path);
-    UtilProcess* gcc = util_process_new(gcc_cmd);
+    char cmd[256];
+    snprintf(cmd, 256, "gcc -pipe -x assembler -o %s %s", exe_path, asm_path);
+    UtilProcess* gcc = util_process_new(cmd);
     util_process_run(gcc);
 
     // print gcc output
@@ -88,7 +91,8 @@ void run_example() {
 
     // run executable
     if (!status) {
-        UtilProcess* hello = util_process_new(exe_path);
+        snprintf(cmd, 256, "%s test_arg0 test_arg1 test_arg2", exe_path);
+        UtilProcess* hello = util_process_new(cmd);
         util_process_run(hello);
         util_process_read(hello, p_out, 4096);
         printf("%s", p_out);
