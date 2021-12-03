@@ -63,6 +63,7 @@ DONE:
 
 TODO:
 - emit jumps
+- lower arithmetic instructions (c = add a, b -> t = copy a; t = add b; c = copy t)
 - support more instructions
 - stack allocation (temporaries, manual)
 - why no convention for xmm register save?

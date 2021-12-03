@@ -122,9 +122,11 @@ void qbn_print_instr_fn(QbnFn* fn, QbnInstr* instr, FILE* file) {
 void qbn_print_fn(QbnFn* fn, FILE* file) {
     fprintf(file, "%s():\n", fn->name);
     for (int i=0; i<fn->vec_blocks->length; i++) {
+        fprintf(file, "b%d:\n", i);
         for (QbnInstr* instr = fn->blocks[i]->instr; instr->op != QBN_OP_BLOCK_END; instr++) {
             qbn_print_instr_fn(fn, instr, file);
         }
+        // TODO: print jumps/returns
     }
     fprintf(file, "\n");
 }

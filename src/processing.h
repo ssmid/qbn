@@ -211,8 +211,6 @@ void qbn_amd64_sysv_block(QbnFn* fn, QbnBlock* block) {
     while (instr_old->op != QBN_OP_BLOCK_END) {
         QbnInstr* instr_new;
         switch (instr_old->op) {
-            case QBN_OP_PAR:
-                break;
             case QBN_OP_ARG:
             case QBN_OP_CALL:
                 qbn_amd64_sysv_call_move(fn, block, instr_old);
@@ -230,6 +228,7 @@ void qbn_amd64_sysv_block(QbnFn* fn, QbnBlock* block) {
         }
         instr_old++;
     }
+    assert(block->jmp_type != QBN_JUMP_NONE);
     if (QBN_IS_RETURN(block->jmp_type)) {
         if (block->jmp_type != QBN_JUMP_RET_NONE) {
             qbn_amd64_sysv_return_move(fn, block);
@@ -259,7 +258,7 @@ void qbn_amd64_sysv_abi(QbnFn* fn) {
     }
 }
 
-QbnRef qbn_amd64_temp_to_ref(QbnFn* fn, QbnRef temp_ref) {
+QbnRef qbn_amd64_resolve_temp(QbnFn* fn, QbnRef temp_ref) {
     assert(QBN_REF_TYPE(temp_ref) == QBN_REF_TEMP);
     QbnTemp* temp = &fn->temps[QBN_REF_INDEX(temp_ref)];
     assert(temp->slot != QBN_REF0);
@@ -267,16 +266,36 @@ QbnRef qbn_amd64_temp_to_ref(QbnFn* fn, QbnRef temp_ref) {
 }
 
 void qbn_amd64_basic_reg_allocation(QbnFn* fn) {
+    fn->rega_n_int_args = 0;
+    fn->rega_n_float_args = 0;
     fn->rega_n_int_regs_used = 0;
     fn->rega_n_float_regs_used = 0;
+    // process parameters
+    for (int i=0; i<fn->vec_params->length; i++) {
+        QbnTemp* temp = fn->params[i];
+        assert(temp->slot == QBN_REF0);
+        if (temp->type == QBN_ETYPE_F32 || temp->type == QBN_ETYPE_F64) {
+            // float
+            // TODO: stack arguments
+            assert(fn->rega_n_int_args < QBN_REG_ARG_FLOAT_COUNT);
+            temp->slot = QBN_REG_REF(QBN_REG_FLOAT[fn->rega_n_float_args]);
+            fn->rega_n_float_args++;
+            fn->rega_n_float_regs_used++;
+        } else {
+            // int
+            assert(fn->rega_n_int_args < QBN_REG_ARG_INT_END - QBN_REG_ARG_INT_START);
+            temp->slot = QBN_REG_REF(QBN_REG_INT[fn->rega_n_int_args]);
+            fn->rega_n_int_args++;
+            fn->rega_n_int_regs_used++;
+        }
+    }
+    // allocate remaining registers
     for (int i=0; i<fn->vec_blocks->length; i++) {
-        // allocates registers in order of calling convention
-        // function parameters rely on this fact
         for (QbnInstr* instr = fn->blocks[i]->instr; instr->op != QBN_OP_BLOCK_END; instr++) {
             if (instr->op != QBN_OP0) {
                 if (instr->to != QBN_REF0) {
                     assert(QBN_REF_TYPE(instr->to) == QBN_REF_TEMP);
-                    QbnTemp *temp = &fn->temps[QBN_REF_INDEX(instr->to)];
+                    QbnTemp* temp = &fn->temps[QBN_REF_INDEX(instr->to)];
                     if (temp->slot == QBN_REF0) {
                         // allocate a register
                         // TODO: stack temporaries
@@ -609,6 +628,7 @@ void qbn_emit_fn(QbnFn* fn, FILE* file) {
 
     for (int i=0; i<fn->vec_blocks->length; i++) {
         qbn_emit_block(fn, fn->blocks[i], file);
+        assert(fn->blocks[i]->jmp_type != QBN_JUMP_NONE);
         if (QBN_IS_RETURN(fn->blocks[i]->jmp_type)) {
             qbn_emit_return(file, fn->blocks[i]);
         } else {

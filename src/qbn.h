@@ -29,10 +29,11 @@ typedef struct QbnFn QbnFn;
 typedef struct QbnContext QbnContext;
 
 typedef enum {
-    QBN_JUMP_RET_NONE = 0,
-    QBN_JUMP_RET_BASE = 1,
-    QBN_JUMP_RET_STRUCT = 2,
-    QBN_JUMP_RET_END = 3,  // upper boundary to do is_return check
+    QBN_JUMP_NONE = 0,
+    QBN_JUMP_RET_NONE = 1,
+    QBN_JUMP_RET_BASE = 2,
+    QBN_JUMP_RET_STRUCT = 3,
+    QBN_JUMP_RET_END = 4,  // upper boundary to do is_return check
     QBN_JUMP_UNCONDITIONAL,
     QBN_JUMP_NZ,
     QBN_JUMP_FI_EQ,
@@ -55,7 +56,7 @@ typedef enum {
     QBN_JUMP_FF_UO   // unordered, at least one NaN
 } QbnJumpType;
 
-#define QBN_IS_RETURN(jmp_type) ((jmp_type) < QBN_JUMP_RET_END)
+#define QBN_IS_RETURN(jmp_type) ((jmp_type) != QBN_JUMP_NONE && (jmp_type) < QBN_JUMP_RET_END)
 
 typedef enum {
     QBN_SEC_NONE, QBN_SEC_DATA, QBN_SEC_TEXT
@@ -125,11 +126,14 @@ struct QbnFn {
     QbnContext* context;
     QbnBaseType return_type;
     char* name;
-    QbnBlock* start;
+    UtilVector* vec_params;
+    QbnTemp** params;
     UtilVector* vec_temps;
     QbnTemp* temps;
     UtilVector* vec_blocks;
     QbnBlock** blocks;
+    int rega_n_float_args;
+    int rega_n_int_args;
     int rega_n_float_regs_used;
     int rega_n_int_regs_used;
     unsigned long frame_size;
@@ -333,19 +337,18 @@ QbnRef qbn_fn_new_temp(QbnFn* fn, QbnExtType type) {
 
 QbnRef qbn_fn_add_parameter(QbnFn* fn, QbnBaseType type) {
     QbnRef temp = qbn_fn_new_temp(fn, type);
-    qbn_fn_add_instr(fn, QBN_OP_PAR, QBN_REF0, QBN_REF0, temp, type);
+    util_vector_grow(fn->vec_params, 1);
+    fn->params[fn->vec_params->length-1] = &fn->temps[QBN_REF_INDEX(temp)];
     return temp;
 }
 
-QbnBlock* qbn_fn_next_block(QbnFn* fn) {
+QbnBlock* qbn_fn_new_block(QbnFn* fn) {
     QbnBlock* block = malloc(sizeof(QbnBlock));
     block->instr = fn->context->current_instr;
     block->phi = NULL;
+    block->jmp_type = QBN_JUMP_NONE;
     util_vector_grow(fn->vec_blocks, 1);
     fn->blocks[fn->vec_blocks->length-1] = block;
-    if (!fn->start) {
-        fn->start = block;
-    }
     return block;
 }
 
@@ -358,8 +361,7 @@ void qbn_block_jump(QbnContext* context, QbnBlock* block, QbnJumpType jump_type,
 }
 
 void qbn_fn_block_return(QbnFn* fn, QbnBlock* block, QbnBaseType type, QbnRef value) {
-    qbn_fn_close_block(fn);
-    block->jmp_type = value ? QBN_JUMP_RET_BASE : QBN_JUMP_RET_NONE;
+    block->jmp_type = (value != QBN_REF0) ? QBN_JUMP_RET_BASE : QBN_JUMP_RET_NONE;
     block->jmp.ret.type = type;
     block->jmp.ret.value = value;
 }
@@ -370,11 +372,14 @@ QbnFn* qbn_context_new_fn(QbnContext* context, QbnBaseType return_type, char* na
     fn->export = export;
     fn->return_type = return_type;
     fn->name = name;
+    fn->vec_params = util_vector_new(sizeof(QbnTemp*), 8, (void**) &fn->params);
     fn->vec_temps = util_vector_new(sizeof(QbnTemp), 0, (void**) &fn->temps);
     fn->vec_blocks = util_vector_new(sizeof(QbnBlock*), 20, (void**) &fn->blocks);
     util_vector_grow(context->vec_functions, 1);
     context->functions[context->vec_functions->length-1] = fn;
-    fn->start = NULL;
+    qbn_fn_close_block(fn);
+    fn->rega_n_int_args = 0;
+    fn->rega_n_float_args = 0;
     fn->rega_n_int_regs_used = 0;
     fn->rega_n_float_regs_used = 0;
     return fn;

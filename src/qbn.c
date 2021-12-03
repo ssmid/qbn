@@ -21,10 +21,11 @@ static QbnContext* set_up_hello() {
     QbnRef s = qbn_data_new_cstring(context, "s", "Hello, world!\\n", false);
 
     QbnFn* fn = qbn_context_new_fn(context, QBN_BTYPE_I32, "main", true);
-    QbnBlock* start = qbn_fn_next_block(fn);
+    QbnBlock* block = qbn_fn_new_block(fn);
     qbn_fn_add_instr(fn, QBN_OP_ARG, s, QBN_REF0, QBN_REF0, context->size_type);
     qbn_fn_add_instr(fn, QBN_OP_CALL, qbn_context_new_name_ref(context, "printf"), QBN_REF0, QBN_REF0, 0);
-    qbn_fn_block_return(fn, start, QBN_BTYPE_I32, qbn_context_new_const_number(context, 0));
+    qbn_fn_close_block(fn);
+    qbn_fn_block_return(fn, block, QBN_BTYPE_I32, qbn_context_new_const_number(context, 0));
     return context;
 }
 
@@ -33,26 +34,32 @@ static QbnContext* set_up_test() {
     QbnRef s = qbn_data_new_cstring(context, "s", "Hello, world!\\n", false);
 
     QbnFn* fn = qbn_context_new_fn(context, QBN_BTYPE_I32, "main", true);
-    QbnBlock* start = qbn_fn_next_block(fn);
     QbnRef argc = qbn_fn_add_parameter(fn, QBN_BTYPE_I32);
     QbnRef argv = qbn_fn_add_parameter(fn, context->size_type);
-    QbnRef temp = qbn_fn_new_temp(fn, QBN_BTYPE_I32);
-    //qbn_fn_add_instr(fn, QBN_OP_COPY, qbn_context_new_const_number(context, 0), QBN_REF0, temp, QBN_BTYPE_I32);
-    qbn_fn_add_instr(fn, QBN_OP_COPY, argc, QBN_REF0, temp, QBN_BTYPE_I32);
+    QbnBlock* block = qbn_fn_new_block(fn);
+    QbnRef ret_value = qbn_fn_new_temp(fn, QBN_BTYPE_I32);
+    qbn_fn_add_instr(fn, QBN_OP_COPY, argc, QBN_REF0, ret_value, QBN_BTYPE_I32);
     qbn_fn_add_instr(fn, QBN_OP_ARG, s, QBN_REF0, QBN_REF0, context->size_type);
     qbn_fn_add_instr(fn, QBN_OP_CALL, qbn_context_new_name_ref(context, "printf"), QBN_REF0, QBN_REF0, 0);
-    qbn_fn_block_return(fn, start, QBN_BTYPE_I32, temp);
+    qbn_fn_close_block(fn);
+    qbn_fn_block_return(fn, block, QBN_BTYPE_I32, ret_value);
     return context;
 }
 
 static QbnContext* set_up_test2() {
     QbnContext* context = qbn_context_new();
-    //QbnFn* fn_square = qbn_context_new_fn(context, QBN_BTYPE_I32, "square", false);
-    //QbnBlock* block_square = qbn_fn_next_block(fn_square);
-    //qbn_fn_add_instr(fn_square, QBN_OP_PAR, QBN_REF0, QBN_REF0, )
+    QbnFn* fn_square = qbn_context_new_fn(context, QBN_BTYPE_I32, "square", false);
+    QbnRef i = qbn_fn_add_parameter(fn_square, QBN_BTYPE_I32);
+    QbnBlock* block_square = qbn_fn_new_block(fn_square);
+    qbn_fn_add_instr(fn_square, QBN_OP_MUL, i, i, i, QBN_BTYPE_I32);
+    qbn_fn_close_block(fn_square);
+    qbn_fn_block_return(fn_square, block_square, QBN_BTYPE_I32, i);
 
     QbnFn* fn_main = qbn_context_new_fn(context, QBN_BTYPE_I32, "main", true);
-    QbnBlock* block_main1 = qbn_fn_next_block(fn_main);
+    QbnBlock* block_main1 = qbn_fn_new_block(fn_main);
+
+    qbn_fn_close_block(fn_main);
+    qbn_fn_block_return(fn_main, block_main1, QBN_BTYPE_I32, qbn_context_new_const_number(context, 0));
 
     return context;
 }
@@ -60,9 +67,9 @@ static QbnContext* set_up_test2() {
 void run_example() {
     QbnContext* context = set_up_test();
 
-    qbn_print_all(stderr, context, "instruction cache start");
+    qbn_print_all(stderr, context, "after ir gen");
     qbn_process(context);
-    qbn_print_all(stderr, context, "instruction cache after processing");
+    qbn_print_all(stderr, context, "after processing");
     qbn_emit(context, stdout);
     fprintf(stdout, "\n");
 
