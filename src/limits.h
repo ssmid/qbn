@@ -3,5 +3,6 @@
 #define QBN_LIMITS_H
 
 #define QBN_LIMIT_INSTR_CACHE 65536
+#define QBN_LIMIT_DATA_BLOCK 32
 
 #endif //QBN_LIMITS_H

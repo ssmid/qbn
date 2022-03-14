@@ -11,15 +11,17 @@
 #include <errno.h>
 
 
+extern char** environ;
+
 typedef struct {
     pid_t pid;
     int pipe_in[2];
     int pipe_out[2];
     int pipe_err[2];
-    char* command;
+    const char* command;
 } UtilProcess;
 
-UtilProcess* util_process_new(char* command) {
+UtilProcess* util_process_new(const char* command) {
     UtilProcess* p = (UtilProcess*) malloc(sizeof(UtilProcess));
     p->pid = 0;
     pipe(p->pipe_in);
@@ -36,12 +38,14 @@ void util_process_run(UtilProcess* process) {
         // SIGTERM if parent dies
         prctl(PR_SET_PDEATHSIG, SIGTERM);
 
+        // TODO: close std ones?
+        
         // set pipes
         dup2(process->pipe_in[0], STDIN_FILENO);
         dup2(process->pipe_out[1], STDOUT_FILENO);
         dup2(process->pipe_err[1], STDERR_FILENO);
 
-        // close pipe fd's since the used ones are duplicated
+        // close pipe fd's since the used ones are duplicated to std
         close(process->pipe_in[0]);
         close(process->pipe_in[1]);
         close(process->pipe_out[0]);
@@ -49,13 +53,13 @@ void util_process_run(UtilProcess* process) {
         close(process->pipe_err[0]);
         close(process->pipe_err[1]);
 
-        char** args = (char**) malloc(sizeof(char*) * 4);
+        const char** args = malloc(sizeof(char*) * 4);
         args[0] = "sh";
         args[1] = "-c";
         args[2] = process->command;
         args[3] = NULL;
 
-        execv("/bin/sh", args);
+        execve("/bin/sh", (char* const*) args, environ);
         // execv returns only on error
         int exec_errno = errno;
         fprintf(stderr, "Error executing command: %d\n", exec_errno);

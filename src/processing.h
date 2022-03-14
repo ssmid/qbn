@@ -128,7 +128,7 @@ void qbn_amd64_sysv_copy(QbnContext* context, QbnBlock* block, QbnInstr* copy) {
     switch (QBN_REF_TYPE(copy->arg0)) {
         case QBN_REF_CONST:
             con = &context->consts[QBN_REF_INDEX(copy->arg0)];
-            if (con->type == QBN_CONST_ADDR) {
+            if (con->type == QBN_CONST_GLOBAL_ADDR) {
                 copy->op = QBN_OP_ADDR;
             }
             break;
@@ -425,7 +425,7 @@ void qbn_emit_amd64_const(QbnContext* context, QbnRef ref, FILE* file) {
         case QBN_CONST_F32:
             fprintf(file, "$%d", (int) con->value.number);
             break;
-        case QBN_CONST_ADDR:
+        case QBN_CONST_GLOBAL_ADDR:
             fprintf(file, "%s(%%rip)", con->value.label);
             break;
         case QBN_CONST_NAME:
@@ -435,65 +435,68 @@ void qbn_emit_amd64_const(QbnContext* context, QbnRef ref, FILE* file) {
 }
 
 void qbn_emit_data(QbnContext* context, FILE* file) {
-    assert(context->data_next->type == QBN_DATA_START);
+    assert(context->data_iterator != NULL || context->data_iterator->type == QBN_DATA_START);
+    QbnDataItem* data = context->data_iterator;
+
+    if (context->current_section == QBN_SEC_NONE) {
+        context->current_section = QBN_SEC_DATA;
+        context->data_is_aligned = false;
+        fprintf(file, ".data\n");
+    }
+    if (!context->data_is_aligned) {
+        fprintf(file, ".balign 8\n");
+        // TODO: check if next line correct
+        context->data_is_aligned = true;
+    }
+    if (data->value.start.export) {
+        fprintf(file, ".globl %s\n", data->value.start.name);
+    }
+    fprintf(file, "%s:\n", data->value.start.name);
+    data++;
+
     while (true) {
-        if (context->current_section == QBN_SEC_NONE) {
-            context->current_section = QBN_SEC_DATA;
-            context->data_is_aligned = false;
-            fprintf(file, ".data\n");
-        }
-        switch (context->data_next->type) {
-            case QBN_DATA_START:
-                if (!context->data_is_aligned) {
-                    fprintf(file, ".balign 8\n");
-                    // TODO: check if next line correct
-                    context->data_is_aligned = true;
-                }
-                if (context->data_next->value.start.export) {
-                    fprintf(file, ".globl %s\n", context->data_next->value.start.name);
-                }
-                fprintf(file, "%s:\n", context->data_next->value.start.name);
-                break;
+        switch (data->type) {
             case QBN_DATA_ALIGN:
-                fprintf(file, ".balign %ld\n", context->data_next->value.align_length);
+                fprintf(file, ".balign %ld\n", data->value.align_length);
                 context->data_is_aligned = true;
                 break;
             case QBN_DATA_ZERO:
-                qbn_fprintf_indent(file, ".fill %ld,1,0\n", context->data_next->value.zero_length);
+                qbn_fprintf_indent(file, ".fill %ld,1,0\n", data->value.zero_length);
                 break;
             case QBN_DATA_REF_DATA:
-                qbn_fprintf_indent(file, ".%s %s%+ld\n", QBN_TYPE2GAS[context->data_next->value.global_ref.ext_type],
-                                   context->data_next->value.global_ref.name,
-                                   context->data_next->value.global_ref.offset);
+                qbn_fprintf_indent(file, ".%s %s%+ld\n", QBN_TYPE2GAS[data->value.global_ref.ext_type],
+                                   data->value.global_ref.name,
+                                   data->value.global_ref.offset);
                 break;
             case QBN_DATA_REF_FUNC:
                 // TODO: change according to target pointer size
                 qbn_fprintf_indent(file, ".%s %s\n", QBN_TYPE2GAS[QBN_TYPE_I64],
-                                   context->data_next->value.global_ref.name);
+                                   data->value.global_ref.name);
                 break;
             case QBN_DATA_STRING:
-                qbn_fprintf_indent(file, ".ascii \"%s\"\n", context->data_next->value.string);
+                qbn_fprintf_indent(file, ".ascii \"%s\"\n", data->value.string);
                 break;
             case QBN_DATA_CONSTANT:
-                if (context->data_next->value.number.ext_type == QBN_TYPE_F64) {
-                    qbn_fprintf_indent(file, ".quad %ld\n", context->data_next->value.number.value.i);
-                } else if (context->data_next->value.number.ext_type == QBN_TYPE_F32) {
-                    qbn_fprintf_indent(file, ".int %d\n", (int) context->data_next->value.number.value.i);
+                if (data->value.number.ext_type == QBN_TYPE_F64) {
+                    qbn_fprintf_indent(file, ".quad %ld\n", data->value.number.value.i);
+                } else if (data->value.number.ext_type == QBN_TYPE_F32) {
+                    qbn_fprintf_indent(file, ".int %d\n", (int) data->value.number.value.i);
                 } else {
-                    qbn_fprintf_indent(file, ".%s %ld\n", QBN_TYPE2GAS[context->data_next->value.number.ext_type],
-                                       context->data_next->value.number.value.i);
+                    qbn_fprintf_indent(file, ".%s %ld\n", QBN_TYPE2GAS[data->value.number.ext_type],
+                                       data->value.number.value.i);
                 }
                 break;
+            case QBN_DATA_START:
             case QBN_DATA_END:
                 fprintf(file, "\n");
+                context->data_iterator = data;
                 return;
             default:
                 QBN_UNREACHABLE
         }
-        if (context->data_next->type == QBN_DATA_NEXT_VEC_BLOCK) {
-            context->data_next = context->data_next->value.next;
-        } else {
-            context->data_next++;
+        data++;
+        while (data->type == QBN_DATA_NEXT_VEC_BLOCK) {
+            data = data->value.next;
         }
     }
 }
@@ -641,7 +644,7 @@ void qbn_emit_fn(QbnFn* fn, FILE* file) {
 
 void qbn_emit(QbnContext* context, FILE* file) {
     context->current_section = QBN_SEC_NONE;
-    context->data_next = context->data;
+    context->data_iterator = context->data;
     for (int i=0; i<context->data_count; i++) {
         qbn_emit_data(context, file);
     }

@@ -117,7 +117,7 @@ struct QbnDataItem {
         QBN_DATA_REF_FUNC,
         QBN_DATA_STRING,
         QBN_DATA_CONSTANT,
-        QBN_DATA_END,
+        QBN_DATA_END,           // absolute end of data list
         QBN_DATA_NEXT_VEC_BLOCK
     } type;
 };
@@ -179,14 +179,14 @@ struct QbnConst {
         QBN_CONST_NUMBER,
         QBN_CONST_F32,
         QBN_CONST_F64,
-        QBN_CONST_ADDR,
-        QBN_CONST_NAME,
+        QBN_CONST_GLOBAL_ADDR,  // referenced via %rip
+        QBN_CONST_NAME,  // TODO: find better naming/distinction for addr and name
     } type;
     union {
         long number;
         float f32;
         double f64;
-        char* label;
+        const char* label;
     } value;
 };
 
@@ -196,8 +196,9 @@ struct QbnContext {
     bool data_is_aligned;
     QbnInstr* instr_cache;
     QbnInstr* current_instr;
-    QbnDataItem* data;
-    QbnDataItem* data_next;
+    QbnDataItem* data;  // blocks of 32 linked with each other with DATA_NEXT_VEC_BLOCK
+    QbnDataItem* data_end;
+    QbnDataItem* data_iterator;  // the current data item to read from
     int data_count;
     UtilVector* vec_functions;
     QbnFn** functions;
@@ -218,6 +219,7 @@ void run_example();
 
 void qbn_print_fns(QbnContext* context, FILE* file);
 void qbn_print_instr_cache(QbnContext* context, FILE* file);
+void qbn_print_data(QbnContext* context, FILE* file);
 void qbn_print_all(FILE* file, QbnContext* context, char* hint);
 
 QbnInstr* qbn_block_last_instr(QbnBlock* block) {
@@ -247,7 +249,7 @@ QbnRef qbn_context_new_label(QbnContext* context, const char* label, int const_t
 }
 
 QbnRef qbn_context_new_data_ref(QbnContext* context, const char* label) {
-    return qbn_context_new_label(context, label, QBN_CONST_ADDR);
+    return qbn_context_new_label(context, label, QBN_CONST_GLOBAL_ADDR);
 }
 
 QbnRef qbn_context_new_name_ref(QbnContext* context, const char* label) {
@@ -260,43 +262,38 @@ QbnRef qbn_context_new_const_number(QbnContext* context, long number) {
 }
 
 void qbn_data_next_block(QbnContext* context) {
-    QbnDataItem* block = malloc(sizeof(QbnDataItem) * 64);
-    for (int i=0; i<63; i++) {
+    assert(context->data_end == NULL || context->data_end->type == QBN_DATA_NEXT_VEC_BLOCK);
+    QbnDataItem* block = malloc(sizeof(QbnDataItem) * QBN_LIMIT_DATA_BLOCK);
+    for (int i=0; i<QBN_LIMIT_DATA_BLOCK-1; i++) {
         block[i].type = QBN_DATA_END;
     }
-    block[63].type = QBN_DATA_NEXT_VEC_BLOCK;
-    block[63].value.next = NULL;
-    if (context->data_next != NULL) {
-        assert(context->data_next->type == QBN_DATA_NEXT_VEC_BLOCK);
-        context->data_next->value.next = block;
+    block[QBN_LIMIT_DATA_BLOCK-1].type = QBN_DATA_NEXT_VEC_BLOCK;
+    block[QBN_LIMIT_DATA_BLOCK-1].value.next = NULL;
+    if (context->data_end != NULL) {
+        context->data_end->value.next = block;
     } else {
         context->data = block;
     }
-    context->data_next = block;
+    context->data_end = block;
 }
 
 void qbn_data_add_item(QbnContext* context, QbnDataItem item) {
-    if (context->data_next->type == QBN_DATA_NEXT_VEC_BLOCK) {
+    if (context->data_end->type == QBN_DATA_NEXT_VEC_BLOCK) {
         qbn_data_next_block(context);
     }
-    *context->data_next = item;
-    context->data_next++;
+    *context->data_end = item;
+    context->data_end++;
 }
 
 void qbn_data_new(QbnContext* context, const char* name, char export) {
-    qbn_data_add_item(context, (QbnDataItem){.value.start = {name, export}, .type = QBN_DATA_START});
-}
-
-void qbn_data_end(QbnContext* context) {
-    qbn_data_add_item(context, (QbnDataItem){.type = QBN_DATA_END});
     context->data_count++;
+    qbn_data_add_item(context, (QbnDataItem){.value.start = {name, export}, .type = QBN_DATA_START});
 }
 
 QbnRef qbn_data_new_cstring(QbnContext* context, const char* name, const char* string, char export) {
     qbn_data_new(context, name, export);
     qbn_data_add_item(context, (QbnDataItem){.type = QBN_DATA_STRING, .value.string = string});
     qbn_data_add_item(context, (QbnDataItem){.type = QBN_DATA_CONSTANT, .value.number = {.ext_type = QBN_TYPE_I8, .value.i = 0}});
-    qbn_data_end(context);
     return qbn_context_new_data_ref(context, name);
 }
 
@@ -356,8 +353,12 @@ void qbn_fn_close_block(QbnFn* fn) {
     qbn_context_block_end(fn->context);
 }
 
-void qbn_block_jump(QbnContext* context, QbnBlock* block, QbnJumpType jump_type, QbnBlock* True, QbnBlock* False) {
-    QBN_NOT_IMPLEMENTED
+void qbn_fn_block_jump(QbnFn* fn, QbnBlock* block, QbnJumpType jump_type, QbnBlock* True, QbnBlock* False) {
+    block->jmp_type = jump_type;
+    assert(!QBN_IS_RETURN(jump_type));
+    assert(jump_type == QBN_JUMP_UNCONDITIONAL || False);
+    block->jmp.dest.True = True;
+    block->jmp.dest.False = False;
 }
 
 void qbn_fn_block_return(QbnFn* fn, QbnBlock* block, QbnBaseType type, QbnRef value) {
@@ -393,7 +394,7 @@ QbnContext* qbn_context_new() {
     context->instr_cache = malloc(sizeof(QbnInstr) * QBN_LIMIT_INSTR_CACHE);
     context->current_instr = context->instr_cache;
     context->data = NULL;
-    context->data_next = NULL;
+    context->data_end = NULL;
     context->data_count = 0;
     qbn_data_next_block(context);
     context->vec_functions = util_vector_new(sizeof(QbnFn*), 20, (void**) &context->functions);
@@ -408,7 +409,7 @@ void qbn_context_reset(QbnContext* context) {
 
     QbnDataItem* block = context->data;
     QbnDataItem* current_data_item = context->data;
-    while (current_data_item != context->data_next) {
+    while (current_data_item != context->data_end) {
         if (current_data_item->type == QBN_DATA_NEXT_VEC_BLOCK) {
             current_data_item = current_data_item->value.next;
             free(block);
@@ -418,7 +419,7 @@ void qbn_context_reset(QbnContext* context) {
         }
     }
     context->data = NULL;
-    context->data_next = NULL;
+    context->data_end = NULL;
     context->data_count = 0;
     qbn_data_next_block(context);
 

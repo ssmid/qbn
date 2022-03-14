@@ -6,9 +6,23 @@
 #include "qbn.h"
 #include "processing.h"
 
+
+const char* QBN_IDENT = "    ";
+
+const char* QBN_DATA_ITEM_TYPE_TO_STR[] = {
+        [QBN_DATA_START] = "QBN_DATA_START",
+        [QBN_DATA_ALIGN] = "QBN_DATA_ALIGN",
+        [QBN_DATA_ZERO] = "QBN_DATA_ZERO",
+        [QBN_DATA_REF_DATA] = "QBN_DATA_REF_DATA",
+        [QBN_DATA_REF_FUNC] = "QBN_DATA_REF_FUNC",
+        [QBN_DATA_STRING] = "QBN_DATA_STRING",
+        [QBN_DATA_CONSTANT] = "QBN_DATA_CONSTANT",
+        [QBN_DATA_END] = "QBN_DATA_END",
+        [QBN_DATA_NEXT_VEC_BLOCK] = "QBN_DATA_NEXT_VEC_BLOCK",
+};
+
 void qbn_print_ref(QbnContext* context, QbnRef ref, unsigned char size, FILE* file) {
     QbnConst* con;
-    QbnTemp* temp;
     switch (QBN_REF_TYPE(ref)) {
         case QBN_REF_REG:
             fprintf(file, "%%%s", QBN_AMD64_REG2GAS(QBN_REF_INDEX(ref), size));
@@ -20,7 +34,7 @@ void qbn_print_ref(QbnContext* context, QbnRef ref, unsigned char size, FILE* fi
             con = &context->consts[QBN_REF_INDEX(ref)];
             switch (con->type) {
                 case QBN_CONST_NAME:
-                case QBN_CONST_ADDR:
+                case QBN_CONST_GLOBAL_ADDR:
                     fprintf(file, "$%s", con->value.label);
                     break;
                 case QBN_CONST_NUMBER:
@@ -56,7 +70,7 @@ void qbn_print_ref_fn(QbnFn* fn, QbnRef ref, unsigned char size, FILE* file) {
             con = &fn->context->consts[QBN_REF_INDEX(ref)];
             switch (con->type) {
                 case QBN_CONST_NAME:
-                case QBN_CONST_ADDR:
+                case QBN_CONST_GLOBAL_ADDR:
                     fprintf(file, "$%s", con->value.label);
                     break;
                 case QBN_CONST_NUMBER:
@@ -75,7 +89,7 @@ void qbn_print_ref_fn(QbnFn* fn, QbnRef ref, unsigned char size, FILE* file) {
 
 void qbn_print_instr(QbnContext* context, QbnInstr* instr, FILE* file) {
     static bool last_op0 = false;
-    fprintf(file, QBN_GAS_INDENT);
+    fprintf(file, QBN_IDENT);
     if (instr->op == QBN_OP0 && last_op0) {
         return;
     }
@@ -98,7 +112,7 @@ void qbn_print_instr(QbnContext* context, QbnInstr* instr, FILE* file) {
 
 void qbn_print_instr_fn(QbnFn* fn, QbnInstr* instr, FILE* file) {
     static bool last_op0 = false;
-    fprintf(file, QBN_GAS_INDENT);
+    fprintf(file, QBN_IDENT);
     if (instr->op == QBN_OP0 && last_op0) {
         return;
     }
@@ -146,6 +160,25 @@ void qbn_print_instr_cache(QbnContext* context, FILE* file) {
         }
     }
     fprintf(file, "\n");
+}
+
+void qbn_print_data(QbnContext* context, FILE* file) {
+    assert(context->data->type == QBN_DATA_START);
+    QbnDataItem* data = context->data;
+    while (1) {
+        fprintf(file, "%s\n", QBN_DATA_ITEM_TYPE_TO_STR[data->type]);
+        switch (data->type) {
+            case QBN_DATA_NEXT_VEC_BLOCK:
+                data = data->value.next;
+                if (data == NULL) {
+                    return;
+                } else {
+                    break;
+                }
+            default:
+                data++;
+        }
+    }
 }
 
 void qbn_print_all(FILE* file, QbnContext* context, char* hint) {

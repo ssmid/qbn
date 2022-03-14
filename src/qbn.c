@@ -1,5 +1,6 @@
 #include "qbn.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include "util/process.h"
 #include "processing.h"
 #include "print.h"
@@ -31,7 +32,8 @@ static QbnContext* set_up_hello() {
 
 static QbnContext* set_up_test() {
     QbnContext* context = qbn_context_new();
-    QbnRef s = qbn_data_new_cstring(context, "s", "Hello, world!\\n", false);
+    QbnRef s1 = qbn_data_new_cstring(context, "s1", "Hello from block 1!\\n", false);
+    QbnRef s2 = qbn_data_new_cstring(context, "s2", "Hello from block 2!\\n", false);
 
     QbnFn* fn = qbn_context_new_fn(context, QBN_BTYPE_I32, "main", true);
     QbnRef argc = qbn_fn_add_parameter(fn, QBN_BTYPE_I32);
@@ -39,7 +41,7 @@ static QbnContext* set_up_test() {
     QbnBlock* block = qbn_fn_new_block(fn);
     QbnRef ret_value = qbn_fn_new_temp(fn, QBN_BTYPE_I32);
     qbn_fn_add_instr(fn, QBN_OP_COPY, argc, QBN_REF0, ret_value, QBN_BTYPE_I32);
-    qbn_fn_add_instr(fn, QBN_OP_ARG, s, QBN_REF0, QBN_REF0, context->size_type);
+    qbn_fn_add_instr(fn, QBN_OP_ARG, s1, QBN_REF0, QBN_REF0, context->size_type);
     qbn_fn_add_instr(fn, QBN_OP_CALL, qbn_context_new_name_ref(context, "printf"), QBN_REF0, QBN_REF0, 0);
     qbn_fn_close_block(fn);
     qbn_fn_block_return(fn, block, QBN_BTYPE_I32, ret_value);
@@ -65,7 +67,8 @@ static QbnContext* set_up_test2() {
 }
 
 void run_example() {
-    QbnContext* context = set_up_test();
+    //QbnContext* context = set_up_test();
+    QbnContext* context = set_up_hello();
 
     qbn_print_all(stderr, context, "after ir gen");
     qbn_process(context);
@@ -78,32 +81,14 @@ void run_example() {
 
     // run gcc
     char* exe_path = "../out";
-    char p_out[1024];
-    char p_err[1024];
     char cmd[256];
     snprintf(cmd, 256, "gcc -pipe -x assembler -o %s %s", exe_path, asm_path);
-    UtilProcess* gcc = util_process_new(cmd);
-    util_process_run(gcc);
-
-    // print gcc output
-    size_t n_read_out = 1;
-    size_t n_read_err = 1;
-    while (n_read_out || n_read_err) {
-        n_read_out = util_process_read(gcc, p_out, 1024);
-        fprintf(stdout, "%s", p_out);
-        n_read_err = util_process_read_err(gcc, p_err, 1024);
-        fprintf(stderr, "%s", p_err);
-    }
-    int status = util_process_wait_exit(gcc);
+    int status = system(cmd);
 
     // run executable
     if (!status) {
         snprintf(cmd, 256, "%s test_arg0 test_arg1 test_arg2", exe_path);
-        UtilProcess* hello = util_process_new(cmd);
-        util_process_run(hello);
-        util_process_read(hello, p_out, 4096);
-        printf("%s", p_out);
-        status = util_process_wait_exit(hello);
+        status = system(cmd);
         printf("-> %d\n", status);
     } else {
         printf("gcc -> %d\n", status);
